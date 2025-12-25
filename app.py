@@ -284,8 +284,8 @@ def run_email_extraction_workflow(gmail_account: str, gmail_password: str) -> di
 # Legacy: Direct execution
 if __name__ == "__main__":
     result = run_email_extraction_workflow(
-        gmail_account="dev.m.3771@gmail.com",
-        gmail_password="jmlr bxym ivud cjam"
+        gmail_account="your_gmail_id@gmail.com",
+        gmail_password="Your password"
     )
     print(f"\n{'='*50}")
     print(f"Final Result: {result}")
