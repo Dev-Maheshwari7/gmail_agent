@@ -2,6 +2,7 @@ import imaplib
 import email
 import os
 import re
+import sys
 from datetime import datetime
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
@@ -40,6 +41,7 @@ def extract_email_address(email_string: str) -> str:
 def agent_gmail_extractor(state: AgentState) -> dict:
     """Extract sent emails from Gmail (limit to 10)"""
     print(f"\n[STEP 1] Connecting to Gmail...")
+    sys.stdout.flush()
     
     try:
         gmail_account = state.get("gmail_account")
@@ -47,6 +49,7 @@ def agent_gmail_extractor(state: AgentState) -> dict:
         
         if not gmail_account or not gmail_password:
             print(f"✗ Missing credentials")
+            sys.stdout.flush()
             return {
                 "error": "Missing credentials",
                 "message": "Gmail account or password not provided"
@@ -55,10 +58,12 @@ def agent_gmail_extractor(state: AgentState) -> dict:
         imap = imaplib.IMAP4_SSL("imap.gmail.com")
         imap.login(gmail_account, gmail_password)
         print(f"✓ Connected successfully")
+        sys.stdout.flush()
         
         print(f"\n[STEP 2] Selecting Sent Mail folder...")
         imap.select('"[Gmail]/Sent Mail"')
         print(f"✓ Folder selected")
+        sys.stdout.flush()
         
         print(f"\n[STEP 3] Fetching all sent emails...")
         status, messages = imap.search(None, "ALL")
@@ -67,6 +72,7 @@ def agent_gmail_extractor(state: AgentState) -> dict:
         # LIMIT TO 10 EMAILS TO AVOID RECURSION
         email_ids = all_email_ids[-10:] if len(all_email_ids) > 10 else all_email_ids
         print(f"✓ Found {len(all_email_ids)} total, using {len(email_ids)} emails")
+        sys.stdout.flush()
         
         imap.close()
         
@@ -78,6 +84,7 @@ def agent_gmail_extractor(state: AgentState) -> dict:
     except Exception as e:
         error_msg = str(e)
         print(f"✗ Connection failed: {error_msg}")
+        sys.stdout.flush()
         return {
             "error": error_msg,
             "message": f"Failed to connect: {error_msg}"
@@ -87,10 +94,12 @@ def agent_gmail_extractor(state: AgentState) -> dict:
 def agent_email_parser(state: AgentState) -> dict:
     """Parse email details"""
     print(f"\n[STEP 4] Extracting email details...")
+    sys.stdout.flush()
     
     email_ids = state.get("email_ids", [])
     if not email_ids:
         print(f"✗ No emails to parse")
+        sys.stdout.flush()
         return {
             "error": "No emails to parse",
             "message": "No emails found",
@@ -126,13 +135,16 @@ def agent_email_parser(state: AgentState) -> dict:
                     "Date": date
                 })
                 print(f"  Email {idx}/{len(email_ids)} parsed")
+                sys.stdout.flush()
                 
             except Exception as e:
                 print(f"  Warning: Could not parse email {email_id}")
+                sys.stdout.flush()
                 continue
         
         imap.close()
         print(f"✓ Extracted {len(email_list)} emails")
+        sys.stdout.flush()
         
         return {
             "email_data": email_list,
@@ -142,6 +154,7 @@ def agent_email_parser(state: AgentState) -> dict:
     except Exception as e:
         error_msg = str(e)
         print(f"✗ Error: {error_msg}")
+        sys.stdout.flush()
         return {
             "error": error_msg,
             "message": f"Error parsing emails: {error_msg}",
@@ -152,10 +165,12 @@ def agent_email_parser(state: AgentState) -> dict:
 def agent_excel_maker(state: AgentState) -> dict:
     """Create Excel file"""
     print(f"\n[STEP 5] Creating Excel file...")
+    sys.stdout.flush()
     
     email_data = state.get("email_data", [])
     if not email_data:
         print(f"✗ No emails to export")
+        sys.stdout.flush()
         return {
             "error": "No emails to export",
             "message": "No data to export",
@@ -193,7 +208,9 @@ def agent_excel_maker(state: AgentState) -> dict:
         wb.save(output_path)
         
         print(f"✓ Excel file saved at: {output_path}")
+        sys.stdout.flush()
         print(f"\n[STEP 6] Workflow completed successfully!")
+        sys.stdout.flush()
         
         return {
             "output_path": output_path,
@@ -203,6 +220,7 @@ def agent_excel_maker(state: AgentState) -> dict:
     except Exception as e:
         error_msg = str(e)
         print(f"✗ Error creating Excel: {error_msg}")
+        sys.stdout.flush()
         return {
             "error": error_msg,
             "message": f"Error: {error_msg}",
@@ -254,6 +272,7 @@ def run_email_extraction_workflow(gmail_account: str, gmail_password: str) -> di
         }
     except Exception as e:
         print(f"Workflow error: {e}")
+        sys.stdout.flush()
         return {
             "success": False,
             "email_count": 0,

@@ -12,18 +12,23 @@ app = Flask(__name__)
 execution_in_progress = False
 execution_result = None
 execution_logs = []
-log_stream = None
+original_stdout = None
 
 class LogCapture(io.StringIO):
-    """Capture logs and print them"""
+    """Capture logs from stdout"""
     def write(self, message):
         super().write(message)
         if message.strip():
             timestamp = datetime.now().strftime("%H:%M:%S")
             log_entry = f"[{timestamp}] {message.strip()}"
             execution_logs.append(log_entry)
-            print(message, end='')  # Also print to console
+            original_stdout.write(message)  # Also print to console
+            original_stdout.flush()
         return len(message)
+    
+    def flush(self):
+        super().flush()
+        original_stdout.flush()
 
 @app.route('/')
 def index():
@@ -32,7 +37,7 @@ def index():
 @app.route('/api/execute', methods=['POST'])
 def execute_task():
     """Execute the email extraction workflow"""
-    global execution_in_progress, execution_result, execution_logs, log_stream
+    global execution_in_progress, execution_result, execution_logs, original_stdout
     
     if execution_in_progress:
         return jsonify({
@@ -44,8 +49,10 @@ def execute_task():
     gmail_account = data.get('gmail_account')
     gmail_password = data.get('gmail_password')
     
+    print(f"DEBUG: Received credentials - Account: {gmail_account}, Password length: {len(gmail_password) if gmail_password else 0}")
+    
     # Validate inputs
-    if not all([gmail_account, gmail_password]):
+    if not gmail_account or not gmail_password:
         return jsonify({
             "success": False,
             "message": "Gmail account and password are required"
@@ -55,6 +62,9 @@ def execute_task():
     execution_in_progress = True
     execution_result = None
     execution_logs = []
+    
+    # Save original stdout and redirect
+    original_stdout = sys.stdout
     
     # Run task in background thread
     thread = threading.Thread(
@@ -71,15 +81,29 @@ def execute_task():
 
 def run_task_background(gmail_account: str, gmail_password: str):
     """Run the extraction in background"""
-    global execution_in_progress, execution_result
+    global execution_in_progress, execution_result, original_stdout
     
     try:
-        # Just run the workflow directly without stdout redirection
+        # Redirect stdout to capture logs
+        log_capture = LogCapture()
+        old_stdout = sys.stdout
+        sys.stdout = log_capture
+        
+        # Run the workflow with provided credentials
         execution_result = run_email_extraction_workflow(gmail_account, gmail_password)
+        
+        # Restore stdout
+        sys.stdout = old_stdout
+        
+        # Add completion logs
         execution_logs.append(f"[INFO] Workflow completed successfully")
         execution_logs.append(f"[INFO] Email count: {execution_result.get('email_count', 0)}")
         execution_logs.append(f"[INFO] File saved: {execution_result.get('output_path', 'N/A')}")
+        
     except Exception as e:
+        if 'sys' in dir() and hasattr(sys, 'stdout'):
+            sys.stdout = old_stdout
+        
         error_msg = str(e)
         execution_logs.append(f"[ERROR] Workflow failed: {error_msg}")
         execution_result = {
@@ -112,5 +136,5 @@ def download_file():
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000, debug=False)
-#  gmail_account="dev.m.3771@gmail.com",
-#         gmail_password="jmlr bxym ivud cjam"
+
+    

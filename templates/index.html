@@ -32,6 +32,7 @@
         .agent-status { font-weight: bold; font-size: 11px; margin-top: 6px; }
         .status-success { color: #388e3c; }
         .status-failed { color: #d32f2f; }
+        .status-processing { color: #1976d2; }
         .logs-container { background: #000; color: #0f0; border-radius: 3px; padding: 10px; max-height: 400px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.4; border: 1px solid #333; }
         .log-entry { margin-bottom: 2px; }
         .result-box { background: #e8f5e9; border-left: 4px solid #388e3c; padding: 12px; border-radius: 4px; margin-top: 15px; }
@@ -42,7 +43,7 @@
 <body>
     <div class="container">
         <h1>📧 Gmail Email Extractor - LangGraph Workflow</h1>
-        <p class="subtitle">Extract all recipients from sent emails and export to Excel</p>
+        <p class="subtitle">Extract all sent emails and export to Excel</p>
         
         <div class="panel">
             <form id="executionForm">
@@ -69,19 +70,19 @@
                 
                 <div class="agent-box">
                     <div class="agent-name">Agent 1: Gmail Extractor</div>
-                    <div class="agent-desc">Fetches all sent emails</div>
+                    <div class="agent-desc">Connects to Gmail and fetches sent emails</div>
                     <div class="agent-status" id="agent1Status">⏳ Waiting...</div>
                 </div>
                 
                 <div class="agent-box">
-                    <div class="agent-name">Agent 2: Recipient Parser</div>
-                    <div class="agent-desc">Parses recipients with pandas</div>
+                    <div class="agent-name">Agent 2: Email Parser</div>
+                    <div class="agent-desc">Extracts email addresses and details</div>
                     <div class="agent-status" id="agent2Status">⏳ Waiting...</div>
                 </div>
                 
                 <div class="agent-box">
                     <div class="agent-name">Agent 3: Excel Maker</div>
-                    <div class="agent-desc">Creates Excel file</div>
+                    <div class="agent-desc">Creates and saves Excel file</div>
                     <div class="agent-status" id="agent3Status">⏳ Waiting...</div>
                 </div>
                 <div id="resultBox"></div>
@@ -109,6 +110,8 @@
             const gmailAccount = document.getElementById('gmailAccount').value;
             const gmailPassword = document.getElementById('gmailPassword').value;
             
+            console.log('Starting workflow...');
+            
             executeBtn.disabled = true;
             statusBadge.textContent = 'Running';
             statusBadge.className = 'status-badge status-running';
@@ -127,20 +130,18 @@
                 });
                 
                 const data = await response.json();
+                console.log('Execute response:', data);
                 
                 if (data.success) {
                     pollInterval = setInterval(pollStatus, 500);
                 } else {
                     alert('Error: ' + data.message);
-                    executeBtn.disabled = false;
-                    statusBadge.textContent = 'Idle';
-                    statusBadge.className = 'status-badge status-idle';
+                    resetUI();
                 }
             } catch (error) {
+                console.error('Error:', error);
                 alert('Error: ' + error.message);
-                executeBtn.disabled = false;
-                statusBadge.textContent = 'Idle';
-                statusBadge.className = 'status-badge status-idle';
+                resetUI();
             }
         });
         
@@ -152,21 +153,32 @@
                 // Update logs
                 if (data.logs && data.logs.length > 0) {
                     displayLogs(data.logs);
+                    updateAgentStatus(data.logs);
                 }
                 
-                // Update agent status
-                updateAgentStatus(data.result);
-                
+                // Check if workflow is complete
                 if (!data.in_progress && data.result) {
                     clearInterval(pollInterval);
+                    
+                    // Mark all as success if workflow succeeded
+                    if (data.result.success) {
+                        setAgentStatus('agent1Status', '✓ SUCCESS', true);
+                        setAgentStatus('agent2Status', '✓ SUCCESS', true);
+                        setAgentStatus('agent3Status', '✓ SUCCESS', true);
+                    }
+                    
                     displayResult(data.result);
-                    executeBtn.disabled = false;
-                    statusBadge.textContent = 'Idle';
-                    statusBadge.className = 'status-badge status-idle';
+                    resetUI();
                 }
             } catch (error) {
                 console.error('Error polling status:', error);
             }
+        }
+        
+        function resetUI() {
+            executeBtn.disabled = false;
+            statusBadge.textContent = 'Idle';
+            statusBadge.className = 'status-badge status-idle';
         }
         
         function resetAgentStatus() {
@@ -187,29 +199,47 @@
             logsContainer.scrollTop = logsContainer.scrollHeight;
         }
         
-        function updateAgentStatus(result) {
-            if (!result) return;
+        function updateAgentStatus(logs) {
+            if (!logs || logs.length === 0) return;
             
-            // Check which agents have completed
-            if (result.message && result.message.includes('Found')) {
-                document.getElementById('agent1Status').innerHTML = '✓ SUCCESS';
-                document.getElementById('agent1Status').className = 'agent-status status-success';
+            const logsText = logs.join('\n');
+            console.log('Checking agent status in logs...');
+            
+            // Agent 1: Check for [STEP 1]
+            if (logsText.includes('[STEP 1]')) {
+                if (logsText.includes('Connected successfully')) {
+                    console.log('Agent 1 SUCCESS');
+                    setAgentStatus('agent1Status', '✓ SUCCESS', true);
+                } else {
+                    setAgentStatus('agent1Status', '⏳ Processing...', false);
+                }
             }
             
-            if (result.summary && result.summary.total_unique_recipients) {
-                document.getElementById('agent2Status').innerHTML = '✓ SUCCESS';
-                document.getElementById('agent2Status').className = 'agent-status status-success';
+            // Agent 2: Check for [STEP 4]
+            if (logsText.includes('[STEP 4]')) {
+                if (logsText.includes('✓ Extracted')) {
+                    console.log('Agent 2 SUCCESS');
+                    setAgentStatus('agent2Status', '✓ SUCCESS', true);
+                } else {
+                    setAgentStatus('agent2Status', '⏳ Processing...', false);
+                }
             }
             
-            if (result.output_path) {
-                document.getElementById('agent3Status').innerHTML = '✓ SUCCESS';
-                document.getElementById('agent3Status').className = 'agent-status status-success';
+            // Agent 3: Check for [STEP 5]
+            if (logsText.includes('[STEP 5]')) {
+                if (logsText.includes('✓ Excel file saved')) {
+                    console.log('Agent 3 SUCCESS');
+                    setAgentStatus('agent3Status', '✓ SUCCESS', true);
+                } else {
+                    setAgentStatus('agent3Status', '⏳ Processing...', false);
+                }
             }
-            
-            if (result.error) {
-                document.getElementById('agent1Status').innerHTML = '✗ FAILED';
-                document.getElementById('agent1Status').className = 'agent-status status-failed';
-            }
+        }
+        
+        function setAgentStatus(elementId, status, isSuccess) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = status;
+            element.className = isSuccess ? 'agent-status status-success' : 'agent-status status-processing';
         }
         
         function displayResult(result) {
@@ -219,7 +249,7 @@
                         <h3>✓ Workflow Completed Successfully</h3>
                         <div class="result-item"><strong>Emails Extracted:</strong> ${result.email_count}</div>
                         <div class="result-item"><strong>Excel File:</strong> ${result.output_path}</div>
-                        <button onclick="downloadExcel()" style="margin-top: 10px; background-color: #28a745; width: 100%;">📥 Download Excel</button>
+                        <button onclick="downloadExcel()" style="margin-top: 10px; background-color: #28a745; width: 100%; border: none; border-radius: 3px; padding: 10px; cursor: pointer; color: white; font-weight: bold;">📥 Download Excel</button>
                     </div>
                 `;
                 document.getElementById('resultBox').innerHTML = resultHTML;
@@ -227,7 +257,7 @@
                 let resultHTML = `
                     <div style="background: #ffebee; border-left: 4px solid #d32f2f; padding: 12px; border-radius: 4px; margin-top: 15px;">
                         <h3 style="color: #d32f2f; font-size: 13px; margin-bottom: 8px;">✗ Workflow Failed</h3>
-                        <div class="result-item"><strong>Error:</strong> ${escapeHtml(result.error)}</div>
+                        <div style="font-size: 12px; color: #333; margin-bottom: 4px;"><strong>Error:</strong> ${escapeHtml(result.error)}</div>
                     </div>
                 `;
                 document.getElementById('resultBox').innerHTML = resultHTML;
