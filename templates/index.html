@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gmail Email Extractor - LangGraph Workflow</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 25px; }
+        h1 { color: #333; margin-bottom: 5px; font-size: 24px; }
+        .subtitle { color: #666; font-size: 13px; margin-bottom: 25px; }
+        .panel { background: #f9f9f9; padding: 18px; border-radius: 4px; margin-bottom: 25px; border-left: 4px solid #4472C4; }
+        .form-group { margin-bottom: 12px; }
+        label { display: block; margin-bottom: 4px; color: #333; font-weight: bold; font-size: 13px; }
+        input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 3px; font-size: 13px; }
+        input:focus { outline: none; border-color: #4472C4; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        button { background-color: #4472C4; color: white; padding: 10px 25px; border: none; border-radius: 3px; cursor: pointer; font-size: 13px; font-weight: bold; width: 100%; transition: background-color 0.2s; }
+        button:hover:not(:disabled) { background-color: #365499; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        .main-content { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .workflow-section { margin-top: 0; }
+        .logs-section { margin-top: 0; }
+        .section-title { font-size: 14px; font-weight: bold; color: #333; margin-bottom: 12px; }
+        .status-badge { padding: 4px 10px; border-radius: 15px; font-size: 11px; font-weight: bold; display: inline-block; }
+        .status-running { background-color: #fff3cd; color: #856404; }
+        .status-idle { background-color: #d4edda; color: #155724; }
+        .agent-box { border-left: 4px solid #4472C4; padding: 12px; margin-bottom: 10px; background: white; border-radius: 2px; border: 1px solid #eee; }
+        .agent-name { font-weight: bold; color: #4472C4; font-size: 12px; }
+        .agent-desc { color: #666; font-size: 12px; margin-top: 4px; }
+        .agent-status { font-weight: bold; font-size: 11px; margin-top: 6px; }
+        .status-success { color: #388e3c; }
+        .status-failed { color: #d32f2f; }
+        .logs-container { background: #000; color: #0f0; border-radius: 3px; padding: 10px; max-height: 400px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.4; border: 1px solid #333; }
+        .log-entry { margin-bottom: 2px; }
+        .result-box { background: #e8f5e9; border-left: 4px solid #388e3c; padding: 12px; border-radius: 4px; margin-top: 15px; }
+        .result-box h3 { color: #388e3c; font-size: 13px; margin-bottom: 8px; }
+        .result-item { font-size: 12px; color: #333; margin-bottom: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📧 Gmail Email Extractor - LangGraph Workflow</h1>
+        <p class="subtitle">Extract all recipients from sent emails and export to Excel</p>
+        
+        <div class="panel">
+            <form id="executionForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Gmail Account *</label>
+                        <input type="email" id="gmailAccount" placeholder="your@gmail.com" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Gmail Password *</label>
+                        <input type="password" id="gmailPassword" placeholder="app-specific password" required>
+                    </div>
+                </div>
+                <button type="submit" id="executeBtn">Start Workflow</button>
+            </form>
+        </div>
+        
+        <div class="main-content">
+            <div class="workflow-section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <div class="section-title">Workflow Status</div>
+                    <span class="status-badge status-idle" id="statusBadge">Idle</span>
+                </div>
+                
+                <div class="agent-box">
+                    <div class="agent-name">Agent 1: Gmail Extractor</div>
+                    <div class="agent-desc">Fetches all sent emails</div>
+                    <div class="agent-status" id="agent1Status">⏳ Waiting...</div>
+                </div>
+                
+                <div class="agent-box">
+                    <div class="agent-name">Agent 2: Recipient Parser</div>
+                    <div class="agent-desc">Parses recipients with pandas</div>
+                    <div class="agent-status" id="agent2Status">⏳ Waiting...</div>
+                </div>
+                
+                <div class="agent-box">
+                    <div class="agent-name">Agent 3: Excel Maker</div>
+                    <div class="agent-desc">Creates Excel file</div>
+                    <div class="agent-status" id="agent3Status">⏳ Waiting...</div>
+                </div>
+                <div id="resultBox"></div>
+            </div>
+            
+            <div class="logs-section">
+                <div class="section-title">Live Server Logs</div>
+                <div class="logs-container" id="logsContainer">
+                    <div class="log-entry">Waiting for execution...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const form = document.getElementById('executionForm');
+        const executeBtn = document.getElementById('executeBtn');
+        const statusBadge = document.getElementById('statusBadge');
+        const logsContainer = document.getElementById('logsContainer');
+        let pollInterval = null;
+        
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const gmailAccount = document.getElementById('gmailAccount').value;
+            const gmailPassword = document.getElementById('gmailPassword').value;
+            
+            executeBtn.disabled = true;
+            statusBadge.textContent = 'Running';
+            statusBadge.className = 'status-badge status-running';
+            
+            resetAgentStatus();
+            clearLogs();
+            
+            try {
+                const response = await fetch('/api/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        gmail_account: gmailAccount,
+                        gmail_password: gmailPassword
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    pollInterval = setInterval(pollStatus, 500);
+                } else {
+                    alert('Error: ' + data.message);
+                    executeBtn.disabled = false;
+                    statusBadge.textContent = 'Idle';
+                    statusBadge.className = 'status-badge status-idle';
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+                executeBtn.disabled = false;
+                statusBadge.textContent = 'Idle';
+                statusBadge.className = 'status-badge status-idle';
+            }
+        });
+        
+        async function pollStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                
+                // Update logs
+                if (data.logs && data.logs.length > 0) {
+                    displayLogs(data.logs);
+                }
+                
+                // Update agent status
+                updateAgentStatus(data.result);
+                
+                if (!data.in_progress && data.result) {
+                    clearInterval(pollInterval);
+                    displayResult(data.result);
+                    executeBtn.disabled = false;
+                    statusBadge.textContent = 'Idle';
+                    statusBadge.className = 'status-badge status-idle';
+                }
+            } catch (error) {
+                console.error('Error polling status:', error);
+            }
+        }
+        
+        function resetAgentStatus() {
+            document.getElementById('agent1Status').innerHTML = '⏳ Processing...';
+            document.getElementById('agent2Status').innerHTML = '⏳ Waiting...';
+            document.getElementById('agent3Status').innerHTML = '⏳ Waiting...';
+            document.getElementById('resultBox').innerHTML = '';
+        }
+        
+        function clearLogs() {
+            logsContainer.innerHTML = '';
+        }
+        
+        function displayLogs(logs) {
+            logsContainer.innerHTML = logs.map(log => 
+                `<div class="log-entry">${escapeHtml(log)}</div>`
+            ).join('');
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+        }
+        
+        function updateAgentStatus(result) {
+            if (!result) return;
+            
+            // Check which agents have completed
+            if (result.message && result.message.includes('Found')) {
+                document.getElementById('agent1Status').innerHTML = '✓ SUCCESS';
+                document.getElementById('agent1Status').className = 'agent-status status-success';
+            }
+            
+            if (result.summary && result.summary.total_unique_recipients) {
+                document.getElementById('agent2Status').innerHTML = '✓ SUCCESS';
+                document.getElementById('agent2Status').className = 'agent-status status-success';
+            }
+            
+            if (result.output_path) {
+                document.getElementById('agent3Status').innerHTML = '✓ SUCCESS';
+                document.getElementById('agent3Status').className = 'agent-status status-success';
+            }
+            
+            if (result.error) {
+                document.getElementById('agent1Status').innerHTML = '✗ FAILED';
+                document.getElementById('agent1Status').className = 'agent-status status-failed';
+            }
+        }
+        
+        function displayResult(result) {
+            if (result.success) {
+                let resultHTML = `
+                    <div class="result-box">
+                        <h3>✓ Workflow Completed Successfully</h3>
+                        <div class="result-item"><strong>Emails Extracted:</strong> ${result.email_count}</div>
+                        <div class="result-item"><strong>Excel File:</strong> ${result.output_path}</div>
+                        <button onclick="downloadExcel()" style="margin-top: 10px; background-color: #28a745; width: 100%;">📥 Download Excel</button>
+                    </div>
+                `;
+                document.getElementById('resultBox').innerHTML = resultHTML;
+            } else if (result.error) {
+                let resultHTML = `
+                    <div style="background: #ffebee; border-left: 4px solid #d32f2f; padding: 12px; border-radius: 4px; margin-top: 15px;">
+                        <h3 style="color: #d32f2f; font-size: 13px; margin-bottom: 8px;">✗ Workflow Failed</h3>
+                        <div class="result-item"><strong>Error:</strong> ${escapeHtml(result.error)}</div>
+                    </div>
+                `;
+                document.getElementById('resultBox').innerHTML = resultHTML;
+            }
+        }
+        
+        function downloadExcel() {
+            fetch('/api/download')
+                .then(response => response.blob())
+                .then(blob => {
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'sent_emails.xlsx';
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    a.remove();
+                })
+                .catch(error => alert('Download failed: ' + error.message));
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

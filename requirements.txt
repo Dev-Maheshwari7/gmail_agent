@@ -1,0 +1,9 @@
+
+pandas
+numpy
+flask
+openpyxl
+langgraph
+langchain
+openpyxl
+python-dotenv
